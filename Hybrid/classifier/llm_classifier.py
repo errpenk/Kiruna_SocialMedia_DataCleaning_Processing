@@ -7,14 +7,6 @@ Each batch of comments is sent in a single API request with a structured
 system prompt. Claude returns a JSON array with one object per comment,
 containing the topic label, a relevance flag, and a short reasoning string.
 
-Advantages over keyword matching
----------------------------------
-- Understands context, irony, and implicit references
-- Handles all languages without language-specific rules
-- Produces a human-readable reason for every classification decision
-- Gracefully degrades on ambiguous cases instead of silently misfiring
-
-Dependencies
 ------------
     pip install anthropic tqdm
 """
