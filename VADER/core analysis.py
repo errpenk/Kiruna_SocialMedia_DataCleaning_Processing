@@ -1,4 +1,5 @@
-pip install vaderSentiment openpyxl pandas
+# pip install vaderSentiment openpyxl pandas
+# git clone https://gitcode.com/gh_mirrors/va/vaderSentiment
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import pandas as pd
