@@ -1,0 +1,2 @@
+# download VADER dict
+nltk.download('vader_lexicon')
