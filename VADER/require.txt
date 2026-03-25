@@ -1,2 +1,6 @@
 # download VADER dict
 nltk.download('vader_lexicon')
+
+# basic
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import nltk
