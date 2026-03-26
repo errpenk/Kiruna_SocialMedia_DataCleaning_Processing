@@ -14,19 +14,19 @@ def install_if_missing(package, import_name=None):
 # Automatically install dependencies
 for pkg, imp in [
     ("vaderSentiment", "vaderSentiment"),
-    ("langdetect",     "langdetect"),
+    ("langdetect", "langdetect"),
     ("deep-translator","deep_translator"),
-    ("openpyxl",       "openpyxl"),
-    ("tqdm",           "tqdm"),
+    ("openpyxl", "openpyxl"),
+    ("tqdm", "tqdm"),
 ]:
     install_if_missing(pkg, imp)
 
 # import
 import config
-from data_loader import load_input
-from translator  import detect_and_translate
-from sentiment   import run_vader
-from exporter    import save_results
+from loader import load_input
+from translator import detect_and_translate
+from sentiment import run_vader
+from exporter import save_results
 
 
 def main():
@@ -37,7 +37,7 @@ def main():
     # 1. load
     print(f"load：{config.INPUT_FILE}")
     df = load_input(config.INPUT_FILE)
-    print(f"      共 {len(df)} 行，列：{list(df.columns)}")
+    print(f" {len(df):,} rows | columns: {list(df.columns)}")
 
     if config.TEXT_COLUMN not in df.columns:
         raise KeyError(
