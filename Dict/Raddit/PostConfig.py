@@ -1,100 +1,108 @@
 # All keywords, exclusion patterns, and file path configurations
 
-# Route
-INPUT_FILE  = 'post_data.xlsx'
-OUTPUT_FILE = 'post_data_cleaned.xlsx'
-SHEET_NAME  = 'post data'
-
-# Combine
-TITLE_COL   = 'Title'
-BODY_COL    = 'selftext'   # optional; None
+import pandas as pd
+from collections import Counter
+from reply_classifier import classify_reply
+from reply_keywords import KEEP_SCORE_THRESHOLD
 
 
-# Directly related keywords (including Kiruna)
-KIRUNA_DIRECT = [
-    r'\bkiruna\b',
-]
-if
-
-# Indirectly related keywords (categorized by topic)
-# For each major category, matching just one pattern is considered a match for that category
-INDIRECT_KEYWORDS = {
-    'northern_sweden': [
-        r'\bnorthern\s+sweden\b',
-        r'\bnorrbotten\b',          # Modify
-        r'\blapland\b',
-        r'\bnorrland\b',
-        r'\bnordic\s+hinterland\b',
-        r'\bswedish\s+arctic\b',
-    ],
-    'mining': [
-        r'\bmining\b',
-        r'\bmine\b',
-        r'\biron\s+ore\b',
-        r'\blkab\b',
-        r'\bgruva\b',
-        r'\bgruvchocken\b',
-        r'\bmalm\b',
-        r'\bbergbau\b',
-        r'\bminerai\b',
-        r'\bopen[\s-]pit\b',
-        r'\bunderground\s+mine\b',
-    ],
-    'relocation': [
-        r'\brelocat',               # relocate / relocation / relocating
-        r'\bmoving\b',
-        r'\bmove\b',
-        r'\bmoved\b',
-        r'\bdisplac',               # displaced / displacement
-        r'\bresettl',               # resettle / resettlement
-        r'\bevacuat',               # evacuate / evacuation
-        r'\babandoned\s+town\b',
-        r'\btown\s+mov',
-        r'\bcity\s+mov',
-        r'\bflytta\b',
-        r'\bflytten\b',
-        r'\bomläggning\b',
-        r'\bumsiedlung\b',
-        r'\bdéplacement\b',
-    ],
-    'sami_culture': [
-        r'\bsami\b',
-        r'\bsámi\b',
-        r'\blapp\b',
-        r'\bindigenous.*sweden\b',
-        r'\breindeer\s+herding\b',
-    ],
-    'rare_earth': [
-        r'\brare[\s-]earth\b',
-        r'\bcritical\s+mineral',
-        r'\bsällsynta\s+jordarter\b',
-    ],
-    'ice_hotel': [
-        r'\bice[\s-]hotel\b',
-        r'\bis-hotell\b',
-        r'\bicehotel\b',
-    ],
-    'church': [
-        r'\bkiruna\s+church\b',     # Modify
-        r'\bkyrka\b',
-        r'\bkirche\b',
-    ],
-}
-
-# Core Topic Combinations (used for confidence weighting)
-# Hitting multiple core categories simultaneously, higher confidence
-CORE_CATEGORIES = {'relocation', 'mining', 'northern_sweden'}
+def load_data(file_path: str, sheet_name: str = "reply data") -> pd.DataFrame:
+    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    df["CONTENT"] = df["CONTENT"].fillna("").astype(str)
+    print(f"Loaded {len(df):,} rows from sheet '{sheet_name}'")
+    return df
 
 
-# Exclusion Mode
-# Exclusion checks are executed before direct/indirect operations.
-EXCLUSION_PATTERNS = [
-    r'\bgame\b.*\bdlc\b',
-    r'\bnordic\s+horizons\b',
-    r'\bcleaning\s+fee\b',
-    r'\bend\s+of\s+tenancy\b',
-    r'\bsan\s+francisco\b',
-    r'\bstockholm\b(?!.*\bkiruna\b)',   # Stockholm but not Kiruna
-    r'\breal\s+estate\b(?!.*\bkiruna\b)',
-    r'\bairbnb\b',
-]
+def save_data(df_annotated: pd.DataFrame, df_deleted: pd.DataFrame, output_file: str) -> None:
+    """Save annotated (kept) rows and deleted rows to two sheets in one XLSX."""
+    with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+        df_annotated.to_excel(writer, sheet_name="reply data", index=False)
+        df_deleted.to_excel(writer, sheet_name="deleted", index=False)
+    print(f"Saved to {output_file}")
+    print(f"Sheet 'reply data' : {len(df_annotated):,} rows")
+    print(f"Sheet 'deleted' : {len(df_deleted):,} rows")
+
+
+def run_pipeline(
+    df: pd.DataFrame,
+    content_col: str = "CONTENT",
+) -> tuple:
+    """
+    Annotate every row; return (df_annotated, df_deleted).
+
+    df_annotated: rows that passed the initial noise filter, with topic/score columns
+    df_deleted: rows removed during initial cleaning, with deletion reasons
+    """
+    keeps, initial_reasons, topics, scores, high_values, recs, final_reasons = (
+        [], [], [], [], [], [], []
+    )
+
+    for content in df[content_col]:
+        keep, init_r, topic, score, hv, rec, fin_r = classify_reply(content)
+        keeps.append(keep)
+        initial_reasons.append(init_r)
+        topics.append(topic)
+        scores.append(score)
+        high_values.append(hv)
+        recs.append(rec)
+        final_reasons.append(fin_r)
+
+    df = df.copy()
+    df["_keep"] = keeps
+    df["_initial_reason"] = initial_reasons
+    df["Kiruna_Topic"] = topics
+    df["Kiruna_Score"] = scores
+    df["High_Value"] = high_values
+    df["Delete_Recommend"] = recs
+    df["Delete_Reason"] = final_reasons
+
+    df_deleted = (
+        df[~df["_keep"]]
+        .rename(columns={"_initial_reason": "Delete_Reason_Initial"})
+        .drop(columns=["_keep"])
+        .reset_index(drop=True)
+    )
+
+    df_annotated = (
+        df[df["_keep"]]
+        .drop(columns=["_keep", "_initial_reason"])
+        .reset_index(drop=True)
+    )
+
+    return df_annotated, df_deleted
+
+
+def print_report(
+    df_orig: pd.DataFrame,
+    df_annotated: pd.DataFrame,
+    df_deleted: pd.DataFrame,
+) -> None:
+    total = len(df_orig)
+    n_kept = len(df_annotated)
+    n_del = len(df_deleted)
+
+    print("\n" + "=" * 60)
+    print(f"Total replies: {total:>6,}")
+    print(f"After initial cleaning: {n_kept:>6,}  ({n_kept / total * 100:.1f}%)")
+    print(f"Removed in initial cleaning: {n_del:>6,}  ({n_del / total * 100:.1f}%)")
+    print("=" * 60)
+
+    print("\n  Score distribution (kept rows)")
+    score_counts = df_annotated["Kiruna_Score"].value_counts().sort_index(ascending=False)
+    for score, count in score_counts.items():
+        bar = "#" * min(count, 40)
+        print(f"Score {score}  {count:>5,}  {bar}")
+
+    high = (df_annotated["High_Value"] == "Yes").sum()
+    above = (df_annotated["Kiruna_Score"] >= KEEP_SCORE_THRESHOLD).sum()
+    print(f"\nHigh-value rows (score >= 4): {high:>6,}")
+    print(f"Rows with score >= {KEEP_SCORE_THRESHOLD}: {above:>6,}")
+
+    print("\nTopic distribution (kept rows)")
+    for topic, count in df_annotated["Kiruna_Topic"].value_counts().items():
+        print(f"{topic:<35} {count:>5,}")
+
+    print("\nInitial deletion breakdown")
+    for reason, count in df_deleted["Delete_Reason_Initial"].value_counts().items():
+        print(f"{reason:<40} {count:>5,}")
+    print()
